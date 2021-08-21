@@ -52,6 +52,8 @@ resp = obj.neuron_post("name", "test-asdf", "short_name", "test-asdf", "hemisphe
 obj.neuron_delete(resp.id);
 ```
 
+For more code examples, see `examples/`.
+
 ### Notes
 Just as the API itself, this repository is a beta version. The API and this repository are subject to continuous change; they are not maintained by the same person, so if API endpoints are changed, parts of this code will break.
 
