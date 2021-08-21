@@ -70,6 +70,9 @@ classdef IBdb < handle
         FUNCTIONS = "functions"
 
         NEURON_RECONSTRUCTION = "neuron-reconstruction"
+        
+        CONFOCAL_STACKS = "confocal_stacks"
+        CONFOCAL_STACK = "confocal_stack"
 
         BRAIN_STRUCTURE = "brain-structure"
 
@@ -412,7 +415,7 @@ classdef IBdb < handle
             end
             
             
-            url = composeUrl(self.api, url);
+            url = append(self.api, url);
             
             % Make doubles that represent integers actual integers. Else, the request may
             % fail because 42.0 instead of 42 is passed by Python. This is rather
@@ -430,7 +433,11 @@ classdef IBdb < handle
             
             
             % Catch file upload parameter
-            uploadFileKeyTF = contains(lower(string(key)), ["file", "files"]);
+            uploadFileKeyTFMat = lower(string(key)) == ["file"; "files"];
+            % -> returns a logical matrix where the rows are the upload parameter words
+            % that are matched and the columns are the keys. Thus, if there is a 1, the
+            % key with this column index is the "file"/"files" key.
+            uploadFileKeyTF = any(uploadFileKeyTFMat, 1);
             
             assert(nnz(uploadFileKeyTF) <= 1, "IBDB:pyRequest:MultipleFileKeysProvided", ...
                 "For file upload, specify either ""file"" or ""files"", not both.");
@@ -513,8 +520,9 @@ classdef IBdb < handle
             
             if py.len(respPy.content) > 0
                 
-                % Convert response to MATLAB data types
-                resp = py2mat(respPy.json);
+                % Convert response data
+                jsonTxt = string(respPy.text);
+                resp = jsondecode(jsonTxt);
                 
             else
                 resp = [];
@@ -621,12 +629,12 @@ classdef IBdb < handle
         end
         
 
-        function [resp, respPy] = neuron_delete(self, id)
+        function [resp, respPy] = neuron_delete(self, neuron_id)
             
-            id = IBdb.validate_id(id);
+            neuron_id = IBdb.validate_id(neuron_id);
             
             [resp, respPy] = self.request('delete', ...
-                composeUrl(IBdb.NEURON, id));
+                composeUrl(IBdb.NEURON, neuron_id));
         end
 
 
@@ -663,17 +671,17 @@ classdef IBdb < handle
                 NameValue.neuron_class {IBdb.mustBeEmpytOrScalarInteger}
             end
             
-
+            
             NameValue.sex = IBdb.validate_SEX(NameValue.sex);
             
             if isfield(NameValue, 'hemisphere')
                 NameValue.hemisphere = IBdb.validate_HEMISPHERE(NameValue.hemisphere);
             end
-
-
+            
+            
             query = namedargs2cell(NameValue);
-
-            [resp, respPy] = self.request("post", IBdb.NEURON, query{:});
+            
+            [resp, respPy] = self.request("post", composeUrl(IBdb.NEURON), query{:});
             
         end
 
@@ -1097,9 +1105,34 @@ classdef IBdb < handle
             
             experiment_id = self.validate_id(experiment_id);
             
+            url = composeUrl(...
+                IBdb.EXPERIMENT, experiment_id, self.FILE, file_uuid);
+            
+            % This is bad! Virtually all endpoints end with a slash, but not this one ...
+            if endsWith(url, "/")
+                url = extractBefore(url, strlength(url));
+            end
+            
+            [resp, respPy] = self.request('delete', url);
+            
+        end
+        
+        
+        function [resp, respPy] = experiment_delete(self, experiment_id)
+            %experiment_delete Delete an experiment.
+            %
+            %   obj.experiment_delete(experiment_id)
+            
+            
+            arguments
+                self
+                experiment_id
+            end
+            
+            experiment_id = self.validate_id(experiment_id);
+            
             [resp, respPy] = self.request('delete', ...
-                composeUrl(...
-                IBdb.EXPERIMENT, experiment_id, self.FILE, file_uuid));
+                composeUrl(IBdb.EXPERIMENT, experiment_id));
             
         end
         
@@ -1356,8 +1389,186 @@ classdef IBdb < handle
             [resp, respPy] = self.request('get',  ...
                 composeUrl(IBdb.NEURON, neuron_id, "list_images"));
             
+        end
+        
+        
+        
+        function [resp, respPy] = neuron_confocal_stacks_get(self, neuron_id)
+            
+            
+            arguments
+                self
+                neuron_id
+            end
+            
+            neuron_id = IBdb.validate_id(neuron_id);
+            
+            [resp, respPy] = self.request('get',  ...
+                composeUrl(IBdb.NEURON, neuron_id, IBdb.CONFOCAL_STACKS));
             
         end
+        
+        
+        function [resp, respPy] = neuron_confocal_stack_post(self, neuron_id, NameValue)
+            
+            
+            arguments
+                self
+                neuron_id
+                
+                NameValue.description {IBdb.mustBeEmptyOrScalarText}
+                NameValue.can_download {IBdb.mustBeEmptyOrLogical}
+                NameValue.archived {IBdb.mustBeEmptyOrLogical}
+                NameValue.default {IBdb.mustBeEmptyOrLogical}
+            end
+            
+            neuron_id = IBdb.validate_id(neuron_id);
+            NameValue.neuron = neuron_id;
+            
+            query = namedargs2cell(NameValue);
+            
+            [resp, respPy] = self.request('post',  ...
+                composeUrl(IBdb.NEURON, IBdb.CONFOCAL_STACK), query{:});
+            
+        end
+        
+        
+        function [resp, respPy] = neuron_confocal_stack_add_source_file(self, stack_id, NameValue)
+            
+            arguments
+                self
+                stack_id
+                NameValue
+            end
+            
+            stack_id = IBdb.validate_id(stack_id);
+            
+            error("(TODO) Endpoint is currently weird.")
+            
+            query = namedargs2cell(NameValue);
+            
+            [resp, respPy] = self.request('post',  ...
+                composeUrl(IBdb.NEURON, IBdb.CONFOCAL_STACK, stack_id, "add_source_file"), ...
+                query{:});
+            
+        end
+        
+        function [dbResp, awsResp] = neuron_confocal_stack_add_viewer_file(self, stack_id, fullFileName)
+            
+            arguments
+                self
+                stack_id
+                fullFileName (1,1) string
+            end
+            
+            stack_id = IBdb.validate_id(stack_id);
+            
+            assert(isfile(fullFileName), "Specified file '%s' not found.", fullFileName);
+            
+            [~,fn,ext] = fileparts(fullFileName);
+            fnExt = append(fn, ext);
+            
+            dbResp = self.request('post',  ...
+                composeUrl(IBdb.NEURON, IBdb.CONFOCAL_STACK, stack_id, "add_viewer_file"), ...
+                "file_name", fnExt);
+            
+            awsResp = IBdb.uploadAws(...
+                dbResp.upload_url.url, dbResp.upload_url.fields, fullFileName, fnExt);
+            
+        end
+        
+        
+        function [filenames, dbResp, awsResp] = neuron_confocal_stack_viewerFileUploader(self, stack_id, fnDir)
+            %neuron_confocal_stack_viewerFileUploader Wrapper for batch uploading viewer
+            %files
+            % 
+            %
+            % obj.neuron_confocal_stack_viewerFileUploader(stack_id, fnDir)
+            % [filenames, dbResp, awsResp] = _
+            %
+            % ---Input
+            %
+            % stack_id -- Valid confocal stack ID
+            % Scalar integer | Scalar text
+            %
+            % fnDir -- File name pattern as accepted by DIR
+            % Scalar string
+            % This string is passed to DIR in order to find files that match this pattern.
+            % I. e., this may be a literal file name, like "stack/img0.jpg", which
+            % resolves to this exact file, or it may be a search pattern like
+            % "stack/img*.jpg", which will return all files that match this pattern. All
+            % found files are uploaded to the stack.
+            %
+            %
+            % ---Output
+            %
+            % filenames -- Full file names of uploaded files
+            % N-by-1 string array where N is the number of uploaded files
+            %
+            % dbResp -- IBdb response(s)
+            %
+            % awsResp -- AWS response(s)
+            
+            
+            arguments
+                self
+                stack_id
+                fnDir
+            end
+            
+            stack_id = IBdb.validate_id(stack_id);
+            
+            logMsg("Gathering file list matching '%s'.", fnDir)
+            
+            fInfo = dir(fnDir);
+            
+            if isempty(fInfo)
+                logMsg("No matching files found; exiting.")
+                filenames = "";
+                dbResp = struct;
+                awsResp = struct;
+                return
+            end
+            
+            nFiles = numel(fInfo);
+            filenames = strings(nFiles, 1);
+            dbResp = cell(nFiles, 1);
+            awsResp = cell(nFiles, 1);
+            
+            logMsg("Starting upload:")
+            
+            for jFile = 1:nFiles
+                
+                cFileInfo = fInfo(jFile);
+                
+                filenames(jFile) = string(fullfile(cFileInfo.folder, cFileInfo.name));
+                
+                [~,fn,ext] = fileparts(filenames(jFile));
+                
+                logMsg("%s%s", fn, ext);
+                
+                [dbResp{jFile}, awsResp{jFile}] = ...
+                    self.neuron_confocal_stack_add_viewer_file(stack_id, filenames(jFile));
+                
+            end
+            
+        end
+        
+        
+        function [resp, respPy] = neuron_confocal_stack_delete(self, stack_id)
+            
+            arguments
+                self
+                stack_id
+            end
+            
+            stack_id = IBdb.validate_id(stack_id);
+            
+            [resp, respPy] = self.request('delete', ...
+                composeUrl(IBdb.NEURON, IBdb.CONFOCAL_STACK, stack_id));
+            
+        end
+        
         
         
         function [resp, respPy] = neuron_function_post(self, neuron_id, NameValue)
@@ -1365,6 +1576,7 @@ classdef IBdb < handle
             %["file", "<filename>"] are provided, this file is uploaded as a
             %representative neural response.
             % 
+            % [resp, respPy] = obj.neuron_function_post(neuron_id, NameValue)
             
             arguments
                 self
@@ -1435,11 +1647,16 @@ classdef IBdb < handle
         end
         
         
-        function [resp, respPy] = neuron_function_representative_response_post(self, uuid, fullFileName)
+        function [resp, respPy] = neuron_function_representative_response_post(self, function_uuid, fullFileName)
+            %neuron_function_representative_response_post Add an image as representative
+            %response to a specific function
+            %
+            % [resp, respPy] = obj.neuron_function_representative_response_post(function_uuid, fullFileName)
+            
             
             arguments
                 self
-                uuid (1,1) string
+                function_uuid (1,1) string
                 fullFileName string {IBdb.mustBeEmptyOrScalarText} = ""
             end
             
@@ -1450,7 +1667,7 @@ classdef IBdb < handle
                 fullFileName = fullfile(p, f);
             end
             
-            url = composeUrl(IBdb.NEURON, IBdb.FUNCTION, uuid, IBdb.FILES);
+            url = composeUrl(IBdb.NEURON, IBdb.FUNCTION, function_uuid, IBdb.FILES);
             
             if self.hasPy
                 
@@ -1491,7 +1708,7 @@ classdef IBdb < handle
             
             arguments
                 self
-                experiment_id {IBdb.mustBeEmpytOrScalarInteger}
+                experiment_id
                 fullFileName string {IBdb.mustBeEmptyOrScalarText} = ""
                 description string {IBdb.mustBeEmptyOrScalarText} = ""
             end
@@ -1527,6 +1744,70 @@ classdef IBdb < handle
         function [fnUpload, dbResp, awsResp] = experiment_fileUploader(self, experiment_id, fnDir, description, NameValue)
             %experiment_fileUploader Wrapper for experiment_file_upload with some
             %convenient options.
+            %
+            %   obj.experiment_fileUploader(experiment_id, fnDir, description, NameValue)
+            %
+            %   [fnUpload, dbResp, awsResp] = obj.experiment_fileUploader(_)
+            %
+            %
+            % ---Input
+            %
+            % experiment_id -- Experiment ID
+            % Scalar integer | Char | Scalar string
+            %
+            % fnDir -- File name pattern as accepted by DIR
+            % Scalar string
+            % This string is passed to DIR in order to find files that match this pattern.
+            % I. e., this may be a literal file name, like "path/data.file", which
+            % resolves to this exact file, or it may be a search pattern like
+            % "path/*.dat", which will return all files in "path/" that end with ".dat".
+            % If multiple files match FNDIR, only the first or all files are uploaded,
+            % depending on the "uploadAllFoundTF" switch.
+            %
+            % description -- File description
+            % Scalar string
+            % If multiple files are found, all files get the same description.
+            %
+            %
+            % Name-Value pairs:
+            %
+            % "uploadAllFoundTF" -- Upload all found files or only the first
+            % false (default) | true
+            % If FALSE, only the first file that matches FNDIR is uploaded. Otherwise, all
+            % matching files are uploaded.
+            %
+            % "deleteExistingFilesTF" -- Delete files with the same file name
+            % true (default) | false
+            % This function checks whether there are already files uploaded to this
+            % experiment that have the same file name. If this switch is TRUE, existing
+            % files are deleted before upload.
+            %
+            % "skipExistingFilesTF" -- Skip upload if the file already exists
+            % true (default) | false
+            % If a file with the same name already exists as a file for this experiment
+            % and this switch is TRUE, the file is skipped; if FALSE, it is still
+            % uploaded. If this switch is TRUE, "deleteExistingFilesTF" is ignored.
+            %
+            % "storeExperimentMetadataTF" -- Store experiment meta data
+            % false (default) | true
+            % If TRUE, experiment meta data from the data base is stored between function
+            % calls. This reduces redundant queries to the data base and is useful if you
+            % are repeatedly calling this function in order to upload data to the same
+            % experiment.
+            %
+            % "dryRun" -- Do not actually upload anything
+            % false (default) | true
+            % If TRUE, nothing is uploaded. Useful for debugging.
+            %
+            %
+            % ---Output
+            %
+            % fnUpload -- File name of the uploaded file(s)
+            % String
+            %
+            % dbResp -- Response from the IBdb
+            %
+            % awsResp -- Response from the AWS
             
             
             arguments
@@ -1595,12 +1876,16 @@ classdef IBdb < handle
                 fInfo = fInfo(1);
             end
             
+            nFiles = numel(fInfo);
+            fnUpload = strings(nFiles, 1);
+            dbResp = cell(nFiles, 1);
+            awsResp = cell(nFiles, 1);
             
-            for jFile = 1:numel(fInfo)
+            for jFile = 1:nFiles
                 
                 cFileInfo = fInfo(jFile);
                 
-                fnUpload = fullfile(cFileInfo.folder, cFileInfo.name);
+                fnUpload(jFile) = string(fullfile(cFileInfo.folder, cFileInfo.name));
                 
                 
                 % Check whether file was already uploaded
@@ -1612,8 +1897,8 @@ classdef IBdb < handle
                     
                     if NameValue.skipExistingFilesTF
                         logMsg("Skipping upload of file %s.", cFileInfo.name);
-                        dbResp = struct;
-                        awsResp = struct;
+                        dbResp{jFile} = struct;
+                        awsResp{jFile} = struct;
                         return
                     end
                     
@@ -1624,7 +1909,8 @@ classdef IBdb < handle
                         
                         if ~NameValue.dryRun
                             cellfun(@(uuid) ...
-                                self.experiment_file_delete(experiment_id, uuid), file_uuid);
+                                self.experiment_file_delete(experiment_id, uuid), ...
+                                file_uuid, 'UniformOutput', false);
                         end
                     end
                     
@@ -1633,48 +1919,49 @@ classdef IBdb < handle
                 logMsg("Starting upload.")
                 
                 if NameValue.dryRun
-                    dbResp = struct;
-                    awsResp = struct;
+                    dbResp{jFile} = struct;
+                    awsResp{jFile} = struct;
                 else
-                    [dbResp, awsResp] = self.experiment_file_upload(...
-                        experiment_id, fnUpload, description);
+                    [dbResp{jFile}, awsResp{jFile}] = self.experiment_file_upload(...
+                        experiment_id, fnUpload(jFile), description);
                 end
                 
-                if ismember('persistent_file_uuid', fieldnames(dbResp))
-                    logMsg("New file UUID: %s", dbResp.persistent_file_uuid);
+                if ismember('persistent_file_uuid', fieldnames(dbResp{jFile}))
+                    logMsg("New file UUID: %s", dbResp{jFile}.persistent_file_uuid);
                 end
                 
                 logMsg("Done (took %.1f min).", toc(t)/60)
                 
             end
             
+            % Convert to struct array
+            dbResp = [dbResp{:}];
             
         end
         
-        
 
 
-        function [resp, respPy] = species_get(self, id)
+        function [resp, respPy] = species_get(self, species_id)
             %species_get Retrieve species meta data.
             
-            id = IBdb.validate_id(id);
+            species_id = IBdb.validate_id(species_id);
             
-            [resp, respPy] = self.request("get", composeUrl(IBdb.SPECIES, id) );
+            [resp, respPy] = self.request("get", composeUrl(IBdb.SPECIES, species_id) );
         end
         
-
-        
         
 
-        function [resp, respPy] = neuron_reconstruction_get(self, id)
-            id = IBdb.validate_id(id);
+        function [resp, respPy] = neuron_reconstruction_get(self, reconstruction_id)
+            
+            reconstruction_id = IBdb.validate_id(reconstruction_id);
             
             [resp, respPy] = self.request("get", ...
-                composeUrl(IBdb.NEURON_RECONSTRUCTION, id) );
+                composeUrl(IBdb.NEURON_RECONSTRUCTION, reconstruction_id) );
         end
         
 
         function [resp, respPy] = neuron_reconstruction_query(self, NameValue)
+            
             arguments
                 self
                 NameValue.default {IBdb.mustBeEmptyOrLogical}
@@ -1760,7 +2047,7 @@ classdef IBdb < handle
         function mustBeEmptyOrLogical(in)
             
             if ~isempty(in)
-                validateattributes(in, {'logica'}, {'scalar'});
+                validateattributes(in, {'logical'}, {'scalar'});
             end
             
         end
@@ -1859,6 +2146,8 @@ classdef IBdb < handle
                 expCatTbl = webread(url);
                 
                 expCatTbl = sortrows( struct2table(expCatTbl) );
+                
+                expCatTbl.value = string(expCatTbl.value);
             end
             
             tbl = expCatTbl;
@@ -1916,11 +2205,11 @@ classdef IBdb < handle
         
         
         % can/should be private?
-        function awsResp = uploadAws(awsUrl, fields, fullFileName, fileName)
+        function awsRespPy = uploadAws(awsUrl, fields, fullFileName, fileName)
             %uploadAws Use an AWS upload URL from the data base for uploading a file.
             % Needs Python and the REQUESTS package.
             %
-            % awsResp = IBdb.uploadAws(awsUrl, fields, fullFileName, fileName);
+            % awsRespPy = IBdb.uploadAws(awsUrl, fields, fullFileName, fileName);
             %
             % awsUrl -- Upload URL returned from the data base
             %
@@ -1967,17 +2256,18 @@ classdef IBdb < handle
                 pyargs('file', {fileName, py.open(fullFileName, 'rb')} ));
             
             % 'data' parameter: request's body
-            awsResp = py.requests.request("POST", awsUrl, ...
+            awsRespPy = py.requests.request("POST", awsUrl, ...
                 pyargs('headers', {}, 'data', payload, 'files', files ) ) ;
             
             
-            if awsResp.status_code < 200 || awsResp.status_code >= 300
+            if awsRespPy.status_code < 200 || awsRespPy.status_code >= 300
                 
                 warning('IBDB:AWSfileUpload:RequestNotSuccessful', ...
                     'The server responded with status %i %s', ...
-                    awsResp.status_code, string(awsResp.reason));
+                    awsRespPy.status_code, string(awsRespPy.reason));
                 
             end
+            
             
             return
             %%
@@ -2005,7 +2295,7 @@ classdef IBdb < handle
             
 %             reqMsg.Header = matlab.net.http.HeaderField('Content-Length', x);
             
-            awsResp = reqMsg.send(dbResp.url);
+            awsRespPy = reqMsg.send(dbResp.url);
             
         end
         
@@ -2160,6 +2450,9 @@ classdef IBdb < handle
             
             % add ARGUMENTS syntax elements and SELF reference
             fullTxt = ["arguments", "self", "", nameValueTxt, "end"];
+            
+            % TODO: Automatically add class and validation function (should be inferrable
+            % from the VALUE token returned from the regex matches).
             
             % convert to single string with newlines
             fullTxt = strjoin(fullTxt, '\n');
