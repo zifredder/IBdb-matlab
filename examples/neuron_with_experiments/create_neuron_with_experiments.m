@@ -17,6 +17,7 @@
 %     ds0_img.png
 %
 % myData/dataset0/confocal_stack/
+%     ds0_stack.tiff
 %     ds0_1.jpeg
 %     ds0_2.jpeg
 %     ds0_3.jpeg
@@ -80,6 +81,7 @@ for j = 1:nDataset
     fnImg = fullfile(dataDir, idStr + "_img.png");
     fnMetadata = fullfile(dataDir, idStr + "_metadata.file");
     fnStackFiles = fullfile(dataDir, "confocal_stack", "*.jpeg");
+    fnStackSourcefile = fullfile(dataDir, "confocal_stack", idStr + "_stack.tiff");
     
     neuron_name = mdat.neuron_name;
     
@@ -142,10 +144,15 @@ for j = 1:nDataset
     
     confocalStack_id = dbResp_confocalStack.id;
     
-    % Upload confocal stack files
-    obj.neuron_confocal_stack_viewerFileUploader(...
+    % Upload confocal stack viewer files
+    obj.neuron_confocal_stack_viewerFileUploader( ...
         confocalStack_id, ...
         fnStackFiles);
+    
+    % Upload confocal stack source file
+    obj.neuron_confocal_stack_add_source_file( ...
+        confocalStack_id, ...
+        fnStackSourcefile);
     
     
     % It might be worthwile checking whether the data set has already been uploaded. In
