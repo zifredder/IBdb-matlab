@@ -1394,7 +1394,9 @@ classdef IBdb < handle
         
         
         function [resp, respPy] = neuron_confocal_stacks_get(self, neuron_id)
-            
+            %neuron_confocal_stacks_get Returns all confocal stacks of a specific neuron.
+            %
+            % [resp, respPy] = obj.neuron_confocal_stacks_get(neuron_id)
             
             arguments
                 self
@@ -1405,6 +1407,25 @@ classdef IBdb < handle
             
             [resp, respPy] = self.request('get',  ...
                 composeUrl(IBdb.NEURON, neuron_id, IBdb.CONFOCAL_STACKS));
+            
+        end
+        
+        
+        function [resp, respPy] = neuron_confocal_stack_get(self, stack_id)
+            %neuron_confocal_stack_get Returns meta data of a specific confocal image
+            %stack.
+            %
+            % [resp, respPy] = obj.neuron_confocal_stack_get(stack_id)
+            
+            arguments
+                self
+                stack_id
+            end
+            
+            stack_id = IBdb.validate_id(stack_id);
+            
+            [resp, respPy] = self.request('get',  ...
+                composeUrl(IBdb.NEURON, IBdb.CONFOCAL_STACK, stack_id));
             
         end
         
@@ -1433,25 +1454,56 @@ classdef IBdb < handle
         end
         
         
-        function [resp, respPy] = neuron_confocal_stack_add_source_file(self, stack_id, NameValue)
+        function [dbResp, awsResp] = neuron_confocal_stack_add_source_file(self, stack_id, fullFileName)
+            %neuron_confocal_stack_add_source_file Uploads a source file to a confocal
+            %image stack.
+            %
+            % [dbResp, awsResp] = obj.neuron_confocal_stack_add_source_file(stack_id, fullFileName)
             
             arguments
                 self
                 stack_id
-                NameValue
+                fullFileName
             end
             
             stack_id = IBdb.validate_id(stack_id);
             
-            error("(TODO) Endpoint is currently weird.")
+            assert(isfile(fullFileName), "Specified file '%s' not found.", fullFileName);
             
-            query = namedargs2cell(NameValue);
+            [~,fn,ext] = fileparts(fullFileName);
+            fnExt = append(fn, ext);
             
-            [resp, respPy] = self.request('post',  ...
+            dbResp = self.request('post',  ...
                 composeUrl(IBdb.NEURON, IBdb.CONFOCAL_STACK, stack_id, "add_source_file"), ...
-                query{:});
+                "file_name", fnExt);
+            
+            awsResp = IBdb.uploadAws(...
+                dbResp.upload_url.url, dbResp.upload_url.fields, fullFileName, fnExt);
             
         end
+        
+        
+        function [resp, respPy] = neuron_confocal_stack_remove_source_file(self, stack_id, file_uuid)
+            %neuron_confocal_stack_remove_source_file Removes a specific source file from
+            %a confocal image stack. Use neuron_confocal_stack_get(stack_id) to retrieve
+            %UUIDs of source files.
+            %
+            % obj.neuron_confocal_stack_remove_source_file(stack_id, file_uuid)
+            
+            arguments
+                self
+                stack_id
+                file_uuid (1,1) string
+            end
+            
+            stack_id = IBdb.validate_id(stack_id);
+            
+            [resp, respPy] = self.request('post',  ...
+                composeUrl(IBdb.NEURON, IBdb.CONFOCAL_STACK, stack_id, "remove_source_file"), ...
+                "uuid", file_uuid);
+            
+        end
+        
         
         function [dbResp, awsResp] = neuron_confocal_stack_add_viewer_file(self, stack_id, fullFileName)
             
@@ -1474,6 +1526,27 @@ classdef IBdb < handle
             
             awsResp = IBdb.uploadAws(...
                 dbResp.upload_url.url, dbResp.upload_url.fields, fullFileName, fnExt);
+            
+        end
+        
+        
+        function [resp, respPy] = neuron_confocal_stack_remove_viewer_file(self, stack_id, fileName)
+            %neuron_confocal_stack_remove_viewer_file Removes a specific file from a
+            %confocal image stack
+            %
+            % obj.neuron_confocal_stack_remove_viewer_file(stack_id, fileName)
+            
+            arguments
+                self
+                stack_id
+                fileName (1,1) string
+            end
+            
+            stack_id = IBdb.validate_id(stack_id);
+            
+            [resp, respPy] = self.request('post',  ...
+                composeUrl(IBdb.NEURON, IBdb.CONFOCAL_STACK, stack_id, "remove_viewer_file"), ...
+                "file_name", fileName);
             
         end
         
@@ -1551,6 +1624,21 @@ classdef IBdb < handle
                     self.neuron_confocal_stack_add_viewer_file(stack_id, filenames(jFile));
                 
             end
+            
+        end
+        
+        
+        function [resp, respPy] = neuron_confocal_stack_set_default(self, stack_id)
+            
+            arguments
+                self
+                stack_id
+            end
+            
+            stack_id = IBdb.validate_id(stack_id);
+            
+            [resp, respPy] = self.request('post', ...
+                composeUrl(IBdb.NEURON, IBdb.CONFOCAL_STACK, stack_id, "set_default"));
             
         end
         
@@ -1647,9 +1735,26 @@ classdef IBdb < handle
         end
         
         
-        function [resp, respPy] = neuron_function_representative_response_post(self, function_uuid, fullFileName)
-            %neuron_function_representative_response_post Add an image as representative
-            %response to a specific function
+        function [resp, respPy] = neuron_function_representative_response_get(self, function_uuid)
+            %neuron_function_representative_response_get Retrieve representative response
+            %files of a function entry.
+            %
+            % [resp, respPy] = obj.neuron_function_representative_response_get(function_uuid)
+            
+            arguments
+                self
+                function_uuid (1,1) string
+            end
+            
+            [resp, respPy] = self.pyRequest('get', ...
+                composeUrl(IBdb.NEURON, IBdb.FUNCTION, function_uuid, IBdb.FILES));
+            
+        end
+        
+        
+        function [resp, respPy] = neuron_function_representative_response_post(self, function_uuid, fullFileName, description)
+            %neuron_function_representative_response_post Add a file as representative
+            %response to a specific function entry.
             %
             % [resp, respPy] = obj.neuron_function_representative_response_post(function_uuid, fullFileName)
             
@@ -1658,6 +1763,7 @@ classdef IBdb < handle
                 self
                 function_uuid (1,1) string
                 fullFileName string {IBdb.mustBeEmptyOrScalarText} = ""
+                description (1,1) string = ""
             end
             
             
@@ -1667,13 +1773,16 @@ classdef IBdb < handle
                 fullFileName = fullfile(p, f);
             end
             
+            assert(isfile(fullFileName), "Specified file '%s' not found.", fullFileName);
+            
             url = composeUrl(IBdb.NEURON, IBdb.FUNCTION, function_uuid, IBdb.FILES);
             
             if self.hasPy
                 
                 [resp, respPy] = self.pyRequest("post", ...
                     url, ...
-                    'file', fullFileName);
+                    'file', fullFileName, ...
+                    'description', description);
                 
             else
                 
@@ -1693,6 +1802,26 @@ classdef IBdb < handle
                 assert(resp.Completed, resp.string);
                 
             end
+            
+        end
+        
+        
+        function [resp, respPy] = neuron_function_representative_response_delete(self, function_uuid, file_uuid)
+            %neuron_function_representative_response_delete Remove a specific file from a
+            %function entry. Use neuron_functions_get(neuron_id) to retrieve the UUIDs of
+            %function entries and associated files.
+            %
+            % [resp, respPy] = obj.neuron_function_representative_response_delete(function_uuid, file_uuid)
+            
+            arguments
+                self
+                function_uuid (1,1) string
+                file_uuid (1,1) string
+            end
+            
+            [resp, respPy] = self.request('post', ...
+                composeUrl(IBdb.NEURON, IBdb.FUNCTION, function_uuid, "remove_file"), ...
+                'file_uuid', file_uuid);
             
         end
         
