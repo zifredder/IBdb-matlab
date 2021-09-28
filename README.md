@@ -1,5 +1,5 @@
 # `IBdb-matlab`
-API request handler for the [IBdb](https://insectbraindb.org).
+API request handler for the [IBdb](https://insectbraindb.org) ([publication](https://elifesciences.org/articles/65376)).
 
 ### Getting started
 ##### Requirements
